@@ -42,13 +42,6 @@ mvn test
 ```
 
 ## 局限性
-- 目前只支持SELECT语句
-- WHERE条件处理相对简单
-- 不支持复杂的SQL功能如JOIN、子查询等
-- GROUP BY子句支持有限
-
-## 不支持
 - 不支持更多SQL语句类型（UPDATE、INSERT、DELETE）
-- 不支持WHERE条件处理能力
-- 不支持GROUP BY和聚合功能
+- 不支持IN、BETWEEN、NULL等WHERE条件处理能力
 - 不支持JOIN和子查询

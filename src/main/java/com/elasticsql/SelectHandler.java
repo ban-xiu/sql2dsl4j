@@ -260,10 +260,56 @@ public class SelectHandler {
      * 构建聚合查询
      */
     private static String buildAggs(PlainSelect plainSelect) {
-        // 简化实现，支持常见聚合函数
+        // 简化实现，支持常见聚合函数和GROUP BY
         JSONObject aggregations = new JSONObject();
+        JSONObject currentAgg = aggregations;
+        List<String> groupByFields = new ArrayList<>();
 
-        // 处理SELECT中的聚合函数
+        // 处理GROUP BY子句
+        if (plainSelect.getGroupBy() != null) {
+            GroupByElement groupByElement = plainSelect.getGroupBy();
+            if (groupByElement.getGroupByExpressions() != null) {
+                ExpressionList groupByExpressions = groupByElement.getGroupByExpressions();
+                List<Expression> expressions = groupByExpressions.getExpressions();
+                for (Expression expr : expressions) {
+                    String field = expr.toString();
+                    // 移除可能的引号和表名前缀
+                    if (field.contains(".")) {
+                        field = field.substring(field.lastIndexOf(".") + 1);
+                    }
+                    if (field.startsWith("'")) {
+                        field = field.substring(1, field.length() - 1);
+                    }
+                    groupByFields.add(field);
+                }
+            }
+        }
+
+        // 构建GROUP BY的嵌套聚合
+        for (int i = 0; i < groupByFields.size(); i++) {
+            String field = groupByFields.get(i);
+            String aggName = "group_by_" + field;
+            JSONObject termsAgg = new JSONObject();
+            JSONObject terms = new JSONObject();
+            terms.put("field", field);
+            termsAgg.put("terms", terms);
+            
+            // 如果是最后一个GROUP BY字段或者没有GROUP BY字段，在这一级添加聚合函数
+            if (i == groupByFields.size() - 1) {
+                currentAgg.put(aggName, termsAgg);
+                currentAgg = termsAgg;
+            } else {
+                JSONObject nextLevel = new JSONObject();
+                termsAgg.put("aggs", nextLevel);
+                currentAgg.put(aggName, termsAgg);
+                currentAgg = nextLevel;
+            }
+        }
+
+        // 在最内层聚合中添加SELECT中的聚合函数
+        JSONObject metricsAggs = new JSONObject();
+        boolean hasMetrics = false;
+        
         for (SelectItem item : plainSelect.getSelectItems()) {
             String itemStr = item.toString().toLowerCase();
             String alias = itemStr;
@@ -355,6 +401,7 @@ public class SelectHandler {
 
             // 如果识别到聚合函数，则构建聚合查询
             if (!funcName.isEmpty()) {
+                hasMetrics = true;
                 JSONObject agg = new JSONObject();
                 if (funcName.equals("count")) {
                     if (field.equals("*")) {
@@ -378,7 +425,42 @@ public class SelectHandler {
                     alias = itemStr.substring(asIndex).trim();
                 }
 
-                aggregations.put(alias, agg);
+                metricsAggs.put(alias, agg);
+            }
+        }
+
+        // 如果有聚合函数且有GROUP BY字段，将聚合函数添加到最后一级GROUP BY聚合中
+        if (hasMetrics && !groupByFields.isEmpty()) {
+            if (currentAgg.has("terms")) {
+                currentAgg.put("aggs", metricsAggs);
+            } else {
+                // 如果是中间层级，直接添加聚合函数
+                // 替代JSONObject.putAll方法
+                for (String key : metricsAggs.keySet()) {
+                    currentAgg.put(key, metricsAggs.get(key));
+                }
+            }
+        } else if (hasMetrics) {
+            // 如果没有GROUP BY字段，直接添加聚合函数到根级别
+            // 替代JSONObject.putAll方法
+            for (String key : metricsAggs.keySet()) {
+                aggregations.put(key, metricsAggs.get(key));
+            }
+        } else if (!groupByFields.isEmpty()) {
+            // 如果只有GROUP BY没有聚合函数，添加一个默认的count聚合
+            JSONObject countAgg = new JSONObject();
+            JSONObject valueCount = new JSONObject();
+            valueCount.put("field", "_index");
+            countAgg.put("value_count", valueCount);
+            metricsAggs.put("count", countAgg);
+            
+            if (currentAgg.has("terms")) {
+                currentAgg.put("aggs", metricsAggs);
+            } else {
+                // 替代JSONObject.putAll方法
+                for (String key : metricsAggs.keySet()) {
+                    currentAgg.put(key, metricsAggs.get(key));
+                }
             }
         }
 

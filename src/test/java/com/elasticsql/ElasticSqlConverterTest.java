@@ -116,4 +116,61 @@ public class ElasticSqlConverterTest {
             ElasticSqlConverter.convert(sql);
         });
     }
+
+    /**
+     * 测试包含GROUP BY子句的SELECT语句
+     */
+    @Test
+    public void testSelectWithGroupBy() throws Exception {
+        String sql = "SELECT department, COUNT(*) as employee_count FROM users GROUP BY department";
+        String dsl = ElasticSqlConverter.convert(sql);
+        System.out.println("SELECT with GROUP BY DSL: " + dsl);
+        assertNotNull(dsl);
+        // 验证生成的DSL包含terms聚合（GROUP BY）和value_count聚合（COUNT）
+        assertTrue(dsl.contains("terms"));
+        assertTrue(dsl.contains("value_count"));
+        assertTrue(dsl.contains("department"));
+        assertTrue(dsl.contains("employee_count"));
+        // 验证查询size为0
+        assertTrue(dsl.contains("size"));
+        assertTrue(dsl.contains("0"));
+    }
+
+    /**
+     * 测试包含多个GROUP BY字段的SELECT语句
+     */
+    @Test
+    public void testSelectWithMultipleGroupBy() throws Exception {
+        String sql = "SELECT department, status, SUM(salary) as total_salary FROM users GROUP BY department, status";
+        String dsl = ElasticSqlConverter.convert(sql);
+        System.out.println("SELECT with multiple GROUP BY DSL: " + dsl);
+        assertNotNull(dsl);
+        // 验证生成的DSL包含嵌套的terms聚合
+        assertTrue(dsl.contains("terms"));
+        assertTrue(dsl.contains("sum"));
+        assertTrue(dsl.contains("department"));
+        assertTrue(dsl.contains("status"));
+        assertTrue(dsl.contains("total_salary"));
+        // 验证查询size为0
+        assertTrue(dsl.contains("size"));
+        assertTrue(dsl.contains("0"));
+    }
+
+    /**
+     * 测试只有GROUP BY没有聚合函数的SELECT语句
+     */
+    @Test
+    public void testSelectWithOnlyGroupBy() throws Exception {
+        String sql = "SELECT department FROM users GROUP BY department";
+        String dsl = ElasticSqlConverter.convert(sql);
+        System.out.println("SELECT with only GROUP BY DSL: " + dsl);
+        assertNotNull(dsl);
+        // 验证生成的DSL包含terms聚合，且默认添加了count聚合
+        assertTrue(dsl.contains("terms"));
+        assertTrue(dsl.contains("value_count"));
+        assertTrue(dsl.contains("department"));
+        // 验证查询size为0
+        assertTrue(dsl.contains("size"));
+        assertTrue(dsl.contains("0"));
+    }
 }
